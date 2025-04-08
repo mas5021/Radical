@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Parallel Coordinates Plot for Climate Data</title>
+  <title>US Data Dashboard: Small Multiples</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
     body {
@@ -14,35 +14,44 @@
     h1 {
       margin-bottom: 1rem;
     }
-    svg {
-      background: #fff;
-      border: 1px solid #ddd;
+    /* Dashboard grid container */
+    #dashboard {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      max-width: 1200px;
       margin: auto;
-      display: block;
     }
-    .dimension-axis line,
-    .dimension-axis path {
-      stroke: #999;
+    .chart-container {
+      background: #fff;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .axis-label {
-      font-size: 12px;
-      fill: #333;
+    .chart-title {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    svg {
+      width: 100%;
+      height: 300px;
+    }
+    .axis path, .axis line {
+      stroke: #333;
+      shape-rendering: crispEdges;
     }
     .line {
       fill: none;
-      stroke: steelblue;
-      stroke-width: 1.5px;
-      opacity: 0.3;
-      transition: opacity 0.2s;
+      stroke-width: 2;
     }
-    .line.highlight {
-      stroke: orange;
-      stroke-width: 3px;
-      opacity: 1;
+    .dot {
+      stroke: #fff;
+      stroke-width: 1px;
     }
     .tooltip {
       position: absolute;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0,0,0,0.8);
       color: #fff;
       padding: 8px;
       border-radius: 4px;
@@ -54,101 +63,166 @@
   </style>
 </head>
 <body>
-  <h1>Climate Data Parallel Coordinates Plot</h1>
-  <svg id="chart" width="1000" height="600"></svg>
+  <h1>US Data Dashboard: Trends in Agriculture & Climate</h1>
+  <div id="dashboard">
+    <!-- Each chart will be inserted into these divs -->
+    <div class="chart-container" id="chart-crop">
+      <div class="chart-title">Crop Production (Historical)</div>
+    </div>
+    <div class="chart-container" id="chart-co2">
+      <div class="chart-title">CO₂ Emissions (Historical)</div>
+    </div>
+    <div class="chart-container" id="chart-temp">
+      <div class="chart-title">Temperature (2020–2024)</div>
+    </div>
+    <div class="chart-container" id="chart-veg">
+      <div class="chart-title">Vegetation Index (2020–2024)</div>
+    </div>
+  </div>
+  
   <div id="tooltip" class="tooltip"></div>
   
   <script>
-    // URL for the climate dataset
+    // CSV URLs (provided by you)
+    const CROP_CSV_URL = "https://gist.githubusercontent.com/mystrycodes/3d3cf36c88a4f23a187cb4e12a835e10/raw/5aebb1fc334be000f4b756db6d5c83adf71e89ab/CropProduction.csv";
+    const CO2_CSV_URL  = "https://gist.githubusercontent.com/mystrycodes/f3e133db6c35f1f7180296e872441fe4/raw/Co2emmission.csv";
     const CLIMATE_CSV_URL = "https://gist.githubusercontent.com/mystrycodes/0e4190865121859997eec1fc2d5b4dcd/raw/d10453ccf854feb48e10319eb8025a973f938abe/climate.csv";
+
+    // Helper function to check if a record is for the US.
+    function isUS(country) {
+      if (!country) return false;
+      const lower = country.toLowerCase();
+      return lower.includes("united states") || lower.includes("usa");
+    }
     
-    // Dimensions (the columns we want to include, aside from Year)
-    const dimensions = ["SolarIrradiance", "CloudCover", "Precipitation", "Temperature", "VegetationIndex"];
+    // Load datasets concurrently.
+    Promise.all([
+      // Crop production: filter for US and years <= 2020.
+      d3.csv(CROP_CSV_URL, d => ({
+        year: +d.TIME,
+        production: +d.Value,
+        country: d.Country
+      })).then(data => data.filter(d => isUS(d.country) && d.year <= 2020)),
+      
+      // CO2 Emission: filter for US and years <= 2020.
+      d3.csv(CO2_CSV_URL, d => ({
+        year: +d.Year,
+        co2: +d.total_emission,
+        country: d.Country
+      })).then(data => data.filter(d => isUS(d.country) && d.year <= 2020)),
+      
+      // Climate: we assume climate data has columns Year, Temperature, VegetationIndex, SolarIrradiance, CloudCover, Precipitation.
+      // Use only the recent period (2020–2024).
+      d3.csv(CLIMATE_CSV_URL, d => ({
+        year: +d.Year,
+        Temperature: +d.Temperature,
+        VegetationIndex: +d.VegetationIndex,
+        SolarIrradiance: +d.SolarIrradiance,
+        CloudCover: +d.CloudCover,
+        Precipitation: +d.Precipitation
+      })).then(data => data.filter(d => d.year >= 2020))
+    ]).then(([cropData, co2Data, climateData]) => {
+      // Log data counts for debugging.
+      console.log("Crop Data (US, <=2020):", cropData.length, cropData);
+      console.log("CO2 Data (US, <=2020):", co2Data.length, co2Data);
+      console.log("Climate Data (>=2020):", climateData.length, climateData);
+      
+      // Draw small line charts for the four variables.
+      drawLineChart("chart-crop", cropData, "year", "production", "Crop Production (tons)", "Year", "Production (t)");
+      drawLineChart("chart-co2", co2Data, "year", "co2", "CO₂ Emissions (t)", "Year", "CO₂ (t)");
+      drawLineChart("chart-temp", climateData, "year", "Temperature", "Temperature (°C)", "Year", "Temperature (°C)");
+      drawLineChart("chart-veg", climateData, "year", "VegetationIndex", "Vegetation Index", "Year", "Vegetation Index");
+    }).catch(error => {
+      console.error("Error loading data:", error);
+    });
     
-    // Set up SVG dimensions and margins.
-    const svg = d3.select("#chart");
-    const margin = { top: 50, right: 50, bottom: 50, left: 50 };
-    const width = +svg.attr("width") - margin.left - margin.right;
-    const height = +svg.attr("height") - margin.top - margin.bottom;
-    const g = svg.append("g")
-                 .attr("transform", `translate(${margin.left},${margin.top})`);
-    
-    // Load the climate CSV dataset.
-    d3.csv(CLIMATE_CSV_URL, d => ({
-      Year: +d.Year,
-      SolarIrradiance: +d.SolarIrradiance,
-      CloudCover: +d.CloudCover,
-      Precipitation: +d.Precipitation,
-      Temperature: +d.Temperature,
-      VegetationIndex: +d.VegetationIndex
-    })).then(data => {
-      // Filter out any rows with missing data.
-      data = data.filter(d =>
-        !isNaN(d.Year) &&
-        dimensions.every(dim => !isNaN(d[dim]))
-      );
+    // Function to draw a small multiple line chart in a given container.
+    function drawLineChart(containerId, data, xKey, yKey, title, xAxisLabel, yAxisLabel) {
+      // Set up dimensions for each small chart.
+      const containerWidth = 400;
+      const containerHeight = 300;
+      const margin = { top: 30, right: 30, bottom: 40, left: 50 };
+      const width = containerWidth - margin.left - margin.right;
+      const height = containerHeight - margin.top - margin.bottom;
       
-      // For clarity, sort data by year (not strictly necessary, but useful).
-      data.sort((a, b) => a.Year - b.Year);
+      // Append an SVG into the container div.
+      const svg = d3.select("#" + containerId)
+                    .append("svg")
+                    .attr("width", containerWidth)
+                    .attr("height", containerHeight);
       
-      // Create a y-scale for each dimension.
-      const yScales = {};
-      dimensions.forEach(dim => {
-        yScales[dim] = d3.scaleLinear()
-                          .domain(d3.extent(data, d => d[dim]))
-                          .range([height, 0])
-                          .nice();
-      });
+      const g = svg.append("g")
+                   .attr("transform", `translate(${margin.left}, ${margin.top})`);
       
-      // Create an x-scale: a scalePoint that equally spaces each dimension.
-      const xScale = d3.scalePoint()
-                       .domain(dimensions)
-                       .range([0, width])
-                       .padding(1);
+      // x-scale: linear scale based on xKey (e.g., year).
+      const xScale = d3.scaleLinear()
+                       .domain(d3.extent(data, d => d[xKey])).nice()
+                       .range([0, width]);
       
-      // Draw an axis for each dimension.
-      dimensions.forEach(dim => {
-        const axisG = g.append("g")
-                       .attr("class", "dimension-axis")
-                       .attr("transform", `translate(${xScale(dim)}, 0)`);
-        axisG.call(d3.axisLeft(yScales[dim]).ticks(5));
-        axisG.append("text")
-             .attr("class", "axis-label")
-             .attr("y", -10)
-             .attr("text-anchor", "middle")
-             .text(dim);
-      });
+      // y-scale: linear scale based on yKey.
+      const yScale = d3.scaleLinear()
+                       .domain(d3.extent(data, d => d[yKey])).nice()
+                       .range([height, 0]);
       
-      // Function to draw a line (path) for a given data record.
-      function path(d) {
-        return d3.line()(dimensions.map(dim => [xScale(dim), yScales[dim](d[dim])]));
-      }
+      // Add x-axis.
+      g.append("g")
+       .attr("transform", `translate(0, ${height})`)
+       .call(d3.axisBottom(xScale).ticks(5).tickFormat(d3.format("d")));
       
-      // Draw lines for each data record.
-      g.selectAll(".line")
+      // Add y-axis.
+      g.append("g")
+       .call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format(",.0f")));
+      
+      // Add axis labels.
+      g.append("text")
+       .attr("x", width / 2)
+       .attr("y", height + 30)
+       .attr("text-anchor", "middle")
+       .style("font-size", "12px")
+       .text(xAxisLabel);
+      
+      g.append("text")
+       .attr("transform", "rotate(-90)")
+       .attr("x", -height / 2)
+       .attr("y", -40)
+       .attr("text-anchor", "middle")
+       .style("font-size", "12px")
+       .text(yAxisLabel);
+      
+      // Line generator.
+      const lineGen = d3.line()
+                        .x(d => xScale(d[xKey]))
+                        .y(d => yScale(d[yKey]))
+                        .curve(d3.curveMonotoneX);
+      
+      // Draw the line.
+      g.append("path")
+       .datum(data)
+       .attr("fill", "none")
+       .attr("stroke", "#2c3e50")
+       .attr("stroke-width", 2)
+       .attr("d", lineGen);
+      
+      // Draw circles at data points.
+      g.selectAll("circle")
        .data(data)
        .enter()
-       .append("path")
-       .attr("class", "line")
-       .attr("d", path)
-       .on("mouseover", function(event, d) {
-         d3.select(this).classed("highlight", true);
-         tooltip.transition().duration(200).style("opacity", 0.9);
-         tooltip.html(
-           `<strong>Year:</strong> ${d.Year}<br>` +
-           dimensions.map(dim => `<strong>${dim}:</strong> ${d[dim]}`).join("<br>")
-         )
-         .style("left", (event.pageX + 10) + "px")
-         .style("top", (event.pageY - 28) + "px");
+       .append("circle")
+       .attr("cx", d => xScale(d[xKey]))
+       .attr("cy", d => yScale(d[yKey]))
+       .attr("r", 3)
+       .attr("fill", "#e74c3c")
+       .on("mouseover", (event, d) => {
+         d3.select("#tooltip")
+           .style("opacity", 1)
+           .html(`${title}<br>${xKey}: ${d[xKey]}<br>${yKey}: ${d[yKey]}`)
+           .style("left", (event.pageX + 10) + "px")
+           .style("top", (event.pageY - 20) + "px");
        })
-       .on("mouseout", function(event, d) {
-         d3.select(this).classed("highlight", false);
-         tooltip.transition().duration(500).style("opacity", 0);
+       .on("mouseout", () => {
+         d3.select("#tooltip").style("opacity", 0);
        });
-      
-    }).catch(error => {
-      console.error("Error loading climate data:", error);
-    });
+    }
   </script>
 </body>
 </html>
