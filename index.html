@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Parallel Coordinates Plot for Climate Data</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      margin: 20px;
+      text-align: center;
+    }
+    h1 {
+      margin-bottom: 1rem;
+    }
+    svg {
+      background: #fff;
+      border: 1px solid #ddd;
+      margin: auto;
+      display: block;
+    }
+    .dimension-axis line,
+    .dimension-axis path {
+      stroke: #999;
+    }
+    .axis-label {
+      font-size: 12px;
+      fill: #333;
+    }
+    .line {
+      fill: none;
+      stroke: steelblue;
+      stroke-width: 1.5px;
+      opacity: 0.3;
+      transition: opacity 0.2s;
+    }
+    .line.highlight {
+      stroke: orange;
+      stroke-width: 3px;
+      opacity: 1;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+  </style>
+</head>
+<body>
+  <h1>Climate Data Parallel Coordinates Plot</h1>
+  <svg id="chart" width="1000" height="600"></svg>
+  <div id="tooltip" class="tooltip"></div>
+  
+  <script>
+    // URL for the climate dataset
+    const CLIMATE_CSV_URL = "https://gist.githubusercontent.com/mystrycodes/0e4190865121859997eec1fc2d5b4dcd/raw/d10453ccf854feb48e10319eb8025a973f938abe/climate.csv";
+    
+    // Dimensions (the columns we want to include, aside from Year)
+    const dimensions = ["SolarIrradiance", "CloudCover", "Precipitation", "Temperature", "VegetationIndex"];
+    
+    // Set up SVG dimensions and margins.
+    const svg = d3.select("#chart");
+    const margin = { top: 50, right: 50, bottom: 50, left: 50 };
+    const width = +svg.attr("width") - margin.left - margin.right;
+    const height = +svg.attr("height") - margin.top - margin.bottom;
+    const g = svg.append("g")
+                 .attr("transform", `translate(${margin.left},${margin.top})`);
+    
+    // Load the climate CSV dataset.
+    d3.csv(CLIMATE_CSV_URL, d => ({
+      Year: +d.Year,
+      SolarIrradiance: +d.SolarIrradiance,
+      CloudCover: +d.CloudCover,
+      Precipitation: +d.Precipitation,
+      Temperature: +d.Temperature,
+      VegetationIndex: +d.VegetationIndex
+    })).then(data => {
+      // Filter out any rows with missing data.
+      data = data.filter(d =>
+        !isNaN(d.Year) &&
+        dimensions.every(dim => !isNaN(d[dim]))
+      );
+      
+      // For clarity, sort data by year (not strictly necessary, but useful).
+      data.sort((a, b) => a.Year - b.Year);
+      
+      // Create a y-scale for each dimension.
+      const yScales = {};
+      dimensions.forEach(dim => {
+        yScales[dim] = d3.scaleLinear()
+                          .domain(d3.extent(data, d => d[dim]))
+                          .range([height, 0])
+                          .nice();
+      });
+      
+      // Create an x-scale: a scalePoint that equally spaces each dimension.
+      const xScale = d3.scalePoint()
+                       .domain(dimensions)
+                       .range([0, width])
+                       .padding(1);
+      
+      // Draw an axis for each dimension.
+      dimensions.forEach(dim => {
+        const axisG = g.append("g")
+                       .attr("class", "dimension-axis")
+                       .attr("transform", `translate(${xScale(dim)}, 0)`);
+        axisG.call(d3.axisLeft(yScales[dim]).ticks(5));
+        axisG.append("text")
+             .attr("class", "axis-label")
+             .attr("y", -10)
+             .attr("text-anchor", "middle")
+             .text(dim);
+      });
+      
+      // Function to draw a line (path) for a given data record.
+      function path(d) {
+        return d3.line()(dimensions.map(dim => [xScale(dim), yScales[dim](d[dim])]));
+      }
+      
+      // Draw lines for each data record.
+      g.selectAll(".line")
+       .data(data)
+       .enter()
+       .append("path")
+       .attr("class", "line")
+       .attr("d", path)
+       .on("mouseover", function(event, d) {
+         d3.select(this).classed("highlight", true);
+         tooltip.transition().duration(200).style("opacity", 0.9);
+         tooltip.html(
+           `<strong>Year:</strong> ${d.Year}<br>` +
+           dimensions.map(dim => `<strong>${dim}:</strong> ${d[dim]}`).join("<br>")
+         )
+         .style("left", (event.pageX + 10) + "px")
+         .style("top", (event.pageY - 28) + "px");
+       })
+       .on("mouseout", function(event, d) {
+         d3.select(this).classed("highlight", false);
+         tooltip.transition().duration(500).style("opacity", 0);
+       });
+      
+    }).catch(error => {
+      console.error("Error loading climate data:", error);
+    });
+  </script>
+</body>
+</html>
