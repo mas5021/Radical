@@ -1,49 +1,49 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Radial Bar Chart for Crop Types Frequency</title>
-  <script src="https://d3js.org/d3.v6.min.js"></script>
-  <style>
-    body {
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      background-color: #f3f3f3;
-      margin: 0; 
-      padding: 0;
-    }
-    h1 {
-      text-align: center;
-      padding-top: 20px;
-      margin-bottom: 5px;
-    }
-    #radialBarChart {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin: 20px auto;
-      width: 600px;
-      height: 600px;
-      position: relative;
-    }
-    .tooltip {
-      position: absolute;
-      text-align: center;
-      padding: 6px;
-      font-size: 12px;
-      background: rgba(0,0,0,0.75);
-      color: #fff;
-      border-radius: 4px;
-      pointer-events: none;
-      opacity: 0;
-    }
-    text {
-      font-size: 12px;
-      fill: #333;
-    }
-    .arc {
-      stroke: #fff;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <title>Radial Bar Chart for Crop Types Frequency</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background-color: #f3f3f3;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      text-align: center;
+      padding-top: 20px;
+      margin-bottom: 5px;
+    }
+    #radialBarChart {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 20px auto;
+      width: 600px;
+      height: 600px;
+      position: relative;
+    }
+    .tooltip {
+      position: absolute;
+      text-align: center;
+      padding: 6px;
+      font-size: 12px;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      border-radius: 4px;
+      pointer-events: none;
+      opacity: 0;
+    }
+    text {
+      font-size: 12px;
+      fill: #333;
+    }
+    .arc {
+      stroke: #fff;
+    }
+  </style>
 </head>
 <body>
 
@@ -52,101 +52,101 @@
 <div class="tooltip" id="radialTooltip"></div>
 
 <script>
-  // Link to your CSV
-  const csvUrl = "https://gist.githubusercontent.com/mystrycodes/dc37c95ed9bfae8f17cf7a9343174118/raw/390386e2a7b4672d9039ae7473055a4f4d321623/ClimateAndCropProductionMergedAndCleaned";
+  // Link to your CSV
+  const csvUrl = "https://gist.githubusercontent.com/mystrycodes/dc37c95ed9bfae8f17cf7a9343174118/raw/390386e2a7b4672d9039ae7473055a4f4d321623/ClimateAndCropProductionMergedAndCleaned";
 
-  const width = 500,
-        height = 500,
-        margin = 50;
+  const width = 500,
+        height = 500,
+        margin = 50;
 
-  const svg = d3.select("#radialBarChart")
-    .append("svg")
-    .attr("width", width)
-    .attr("height", height);
+  const svg = d3.select("#radialBarChart")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
 
-  const g = svg.append("g")
-    .attr("transform", translate(${width/2}, ${height/2}));
+  const g = svg.append("g")
+    .attr("transform", `translate(${width/2}, ${height/2})`);
 
-  const tooltip = d3.select("#radialTooltip");
+  const tooltip = d3.select("#radialTooltip");
 
-  d3.csv(csvUrl).then(data => {
-    // Count frequency of each crop type
-    const freqMap = d3.rollup(data, v => v.length, d => d.SUBJECT);
-    // Convert to array
-    let dataset = Array.from(freqMap, ([subject, count]) => ({ subject, count }));
-    
-    // Sort descending
-    dataset.sort((a, b) => b.count - a.count);
+  d3.csv(csvUrl).then(data => {
+    // Count frequency of each crop type
+    const freqMap = d3.rollup(data, v => v.length, d => d.SUBJECT);
+    // Convert to array
+    let dataset = Array.from(freqMap, ([subject, count]) => ({ subject, count }));
+    
+    // Sort descending
+    dataset.sort((a, b) => b.count - a.count);
 
-    // Basic dimension
-    const N = dataset.length;
-    const angleSlice = (2 * Math.PI) / N;
-    const outerRadius = Math.min(width, height) / 2 - margin;
+    // Basic dimension
+    const N = dataset.length;
+    const angleSlice = (2 * Math.PI) / N;
+    const outerRadius = Math.min(width, height) / 2 - margin;
 
-    const maxCount = d3.max(dataset, d => d.count);
-    const rScale = d3.scaleLinear()
-      .domain([0, maxCount])
-      .range([0, outerRadius]);
+    const maxCount = d3.max(dataset, d => d.count);
+    const rScale = d3.scaleLinear()
+      .domain([0, maxCount])
+      .range([0, outerRadius]);
 
-    // Arc generator
-    const arc = d3.arc()
-      .startAngle((d, i) => i * angleSlice)
-      .endAngle((d, i) => (i + 1) * angleSlice)
-      .innerRadius(0)
-      .outerRadius(d => 0); // Start from 0 for transition
+    // Arc generator
+    const arc = d3.arc()
+      .startAngle((d, i) => i * angleSlice)
+      .endAngle((d, i) => (i + 1) * angleSlice)
+      .innerRadius(0)
+      .outerRadius(d => 0); // Start from 0 for transition
 
-    // Draw arcs
-    g.selectAll(".arc")
-      .data(dataset)
-      .enter()
-      .append("path")
-      .attr("class", "arc")
-      .attr("fill", "orange")
-      .attr("d", arc)
-      .on("mouseover", (event, d) => {
-        tooltip.transition().duration(200).style("opacity", 0.9);
-        tooltip.html(<strong>${d.subject}</strong><br/>${d.count})
-          .style("left", (event.pageX + 8) + "px")
-          .style("top", (event.pageY - 28) + "px");
-      })
-      .on("mousemove", (event) => {
-        tooltip
-          .style("left", (event.pageX + 8) + "px")
-          .style("top", (event.pageY - 28) + "px");
-      })
-      .on("mouseout", () => {
-        tooltip.transition().duration(300).style("opacity", 0);
-      })
-      .transition()
-      .duration(1000)
-      .attrTween("d", function(d, i) {
-        const interpOuter = d3.interpolateNumber(0, rScale(d.count));
-        return function(t) {
-          return d3.arc()
-            .startAngle(i * angleSlice)
-            .endAngle((i + 1) * angleSlice)
-            .innerRadius(0)
-            .outerRadius(interpOuter(t))();
-        };
-      });
+    // Draw arcs
+    const arcs = g.selectAll(".arc") // Changed selector to ".arc"
+      .data(dataset)
+      .enter()
+      .append("path")
+      .attr("class", "arc")
+      .attr("fill", "orange")
+      .attr("d", arc)
+      .on("mouseover", (event, d) => {
+        tooltip.transition().duration(200).style("opacity", 0.9);
+        tooltip.html(`<strong>${d.subject}</strong><br/>${d.count}`)
+          .style("left", (event.pageX + 8) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mousemove", (event) => {
+        tooltip
+          .style("left", (event.pageX + 8) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseout", () => {
+        tooltip.transition().duration(300).style("opacity", 0);
+      })
+      .transition()
+      .duration(1000)
+      .attrTween("d", function(d, i) {
+        const interpOuter = d3.interpolateNumber(0, rScale(d.count));
+        return function(t) {
+          return d3.arc()
+            .startAngle(i * angleSlice)
+            .endAngle((i + 1) * angleSlice)
+            .innerRadius(0)
+            .outerRadius(interpOuter(t))();
+        };
+      });
 
-    // Add labels
-    g.selectAll(".label")
-      .data(dataset)
-      .enter()
-      .append("text")
-      .attr("class", "label")
-      .attr("text-anchor", "middle")
-      .attr("transform", (d, i) => {
-        const angle = (i + 0.5) * angleSlice - Math.PI / 2;
-        const r = rScale(d.count) + 20; // label offset
-        const x = Math.cos(angle) * r;
-        const y = Math.sin(angle) * r;
-        return translate(${x}, ${y});
-      })
-      .text(d => d.subject)
-      .style("font-size", "11px");
-  });
+    // Add labels
+    g.selectAll(".label") // Changed selector to ".label"
+      .data(dataset)
+      .enter()
+      .append("text")
+      .attr("class", "label")
+      .attr("text-anchor", "middle")
+      .attr("transform", (d, i) => {
+        const angle = (i + 0.5) * angleSlice - Math.PI / 2;
+        const r = rScale(d.count) + 20; // label offset
+        const x = Math.cos(angle) * r;
+        const y = Math.sin(angle) * r;
+        return `translate(${x}, ${y})`;
+      })
+      .text(d => d.subject)
+      .style("font-size", "11px");
+  });
 </script>
 </body>
 </html>
