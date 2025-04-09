@@ -1,477 +1,152 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Climate Factors Influence on Temperature & Vegetation</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css"/>
-    <style>
-        body {
-            font-family: sans-serif;
-            background: #f7f9fc;
-            margin: 20px;
-            text-align: center;
-        }
-        h1 {
-            color: #333;
-        }
-        #controls {
-            margin-bottom: 20px;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 10px;
-        }
-        #chart-container {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-around;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        svg {
-            background: #ffffff;
-            border: 1px solid #ccc;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-            margin: auto;
-        }
-        .tooltip {
-            position: absolute;
-            background: rgba(0,0,0,0.8);
-            color: #fff;
-            padding: 6px 8px;
-            border-radius: 4px;
-            pointer-events: none;
-            font-size: 12px;
-            opacity: 0;
-        }
-        .axis path,
-        .axis line {
-            fill: none;
-            stroke: #333;
-            shape-rendering: crispEdges;
-        }
-        .axis text {
-            font-size: 12px;
-            fill: #333;
-        }
-        .line {
-            fill: none;
-            stroke: steelblue;
-            stroke-width: 1.5px;
-            opacity: 0.7;
-        }
-        .line:hover {
-            stroke: #e67e22;
-            stroke-width: 2.5px;
-            opacity: 0.9;
-        }
-        .dimension-label {
-            font-size: 14px;
-            fill: #333;
-            text-anchor: middle;
-        }
-        #loading {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 1rem 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .error-message {
-            color: red;
-            margin-top: 1rem;
-        }
-        .chart-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            text-align: center;
-        }
-    </style>
+  <meta charset="utf-8">
+  <title>Radial Bar Chart for Crop Types Frequency</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background-color: #f3f3f3;
+      margin: 0; 
+      padding: 0;
+    }
+    h1 {
+      text-align: center;
+      padding-top: 20px;
+      margin-bottom: 5px;
+    }
+    #radialBarChart {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 20px auto;
+      width: 600px;
+      height: 600px;
+      position: relative;
+    }
+    .tooltip {
+      position: absolute;
+      text-align: center;
+      padding: 6px;
+      font-size: 12px;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      border-radius: 4px;
+      pointer-events: none;
+      opacity: 0;
+    }
+    text {
+      font-size: 12px;
+      fill: #333;
+    }
+    .arc {
+      stroke: #fff;
+    }
+  </style>
 </head>
 <body>
-    <h1>Influence of Climate Factors on Temperature & Vegetation</h1>
-    <div id="controls">
-        <label for="yearSlider">Year: </label>
-        <input type="range" id="yearSlider" min="0" max="0" value="0" step="1">
-        <span id="yearLabel"></span>
-    </div>
-    <div id="chart-container">
-        <div class="chart-wrapper">
-            <h2 class="chart-title">Parallel Coordinates Plot</h2>
-            <svg id="pcp" width="600" height="400"></svg>
-        </div>
-        <div class="chart-wrapper">
-            <h2 class="chart-title">Radial Plot</h2>
-            <svg id="radial" width="500" height="500"></svg>
-        </div>
-        <div class="chart-wrapper">
-            <h2 class="chart-title">Ternary Plot (for a subset of data)</h2>
-            <svg id="ternary" width="500" height="450"></svg>
-        </div>
-    </div>
-    <div class="tooltip" id="tooltip"></div>
-    <div id="loading">Loading data...</div>
-    <div class="error-message" id="errorBox"></div>
 
-    <script>
-       // Replace this URL with your dataset's public Gist URL for the climate data.
-        const dataURL = "https://gist.githubusercontent.com/mas5021/546c5cb1aaaaed863bb098b86f71503e/raw/1897725dabe21080a628a0022fa79942c48e1483/merged_climate.csv";
+<h1>Radial Bar Chart of Crop Types Frequency</h1>
+<div id="radialBarChart"></div>
+<div class="tooltip" id="radialTooltip"></div>
 
-        // Function to compute a synthetic vegetation index:
-        function computeVegetationIndex(d) {
-            return (d["Precipitation (mm)"] * d["Solar_Irradiance (W/m²)"]) / (d["Avg_Temp (°C)"] + 10);
-        }
+<script>
+  // Link to your CSV
+  const csvUrl = "https://gist.githubusercontent.com/mystrycodes/dc37c95ed9bfae8f17cf7a9343174118/raw/390386e2a7b4672d9039ae7473055a4f4d321623/ClimateAndCropProductionMergedAndCleaned";
 
-        // 1. Data Preparation
-        function processData(data) {
-            data.forEach(d => {
-                d.Year = +d.Year;
-                d.Month = +d.Month;
-                d["Avg_Temp (°C)"] = +d["Avg_Temp (°C)"];
-                d["Precipitation (mm)"] = +d["Precipitation (mm)"];
-                d["Solar_Irradiance (W/m²)"] = +d["Solar_Irradiance (W/m²)"];
-                d["Cloud_Cover (%)"] = +d["Cloud_Cover (%)"];
-                d.Vegetation = computeVegetationIndex(d);
-            });
-            return data;
-        }
+  const width = 500,
+        height = 500,
+        margin = 50;
 
-        // 2. Scales and Configuration
-        const dimensions = [
-            "Avg_Temp (°C)",
-            "Precipitation (mm)",
-            "Solar_Irradiance (W/m²)",
-            "Cloud_Cover (%)",
-            "Vegetation"
-        ];
+  const svg = d3.select("#radialBarChart")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
 
-        // Color scale
-        const colorScale = d3.scaleSequential(d3.interpolatePlasma);
+  const g = svg.append("g")
+    .attr("transform", translate(${width/2}, ${height/2}));
 
-        // 3. SVG elements
-        const svgPCP = d3.select("#pcp");
-        const marginPCP = { top: 20, right: 70, bottom: 30, left: 70 };
-        const widthPCP = +svgPCP.attr("width") - marginPCP.left - marginPCP.right;
-        const heightPCP = +svgPCP.attr("height") - marginPCP.top - marginPCP.bottom;
-        const gPCP = svgPCP.append("g").attr("transform", `translate(${marginPCP.left},${marginPCP.top})`);
+  const tooltip = d3.select("#radialTooltip");
 
-        const svgRadial = d3.select("#radial");
-        const marginRadial = { top: 50, right: 50, bottom: 50, left: 50 };
-        const widthRadial = +svgRadial.attr("width");
-        const heightRadial = +svgRadial.attr("height");
-        const radius = Math.min(widthRadial, heightRadial) / 2 - 10;
-        const gRadial = svgRadial.append("g").attr("transform", `translate(${widthRadial / 2},${heightRadial / 2})`);
+  d3.csv(csvUrl).then(data => {
+    // Count frequency of each crop type
+    const freqMap = d3.rollup(data, v => v.length, d => d.SUBJECT);
+    // Convert to array
+    let dataset = Array.from(freqMap, ([subject, count]) => ({ subject, count }));
+    
+    // Sort descending
+    dataset.sort((a, b) => b.count - a.count);
 
-        const svgTernary = d3.select("#ternary");
-        const marginTernary = { top: 20, right: 20, bottom: 50, left: 50 };
-        const widthTernary = +svgTernary.attr("width") - marginTernary.left - marginTernary.right;
-        const heightTernary = +svgTernary.attr("height") - marginTernary.top - marginTernary.bottom;
-        const gTernary = svgTernary.append("g").attr("transform", `translate(${marginTernary.left},${marginTernary.top})`);
+    // Basic dimension
+    const N = dataset.length;
+    const angleSlice = (2 * Math.PI) / N;
+    const outerRadius = Math.min(width, height) / 2 - margin;
 
-        const tooltip = d3.select("#tooltip");
-        const yearSlider = d3.select("#yearSlider");
-        const yearLabel = d3.select("#yearLabel");
+    const maxCount = d3.max(dataset, d => d.count);
+    const rScale = d3.scaleLinear()
+      .domain([0, maxCount])
+      .range([0, outerRadius]);
 
-        let allData = [];
-        let minYear, maxYear;
+    // Arc generator
+    const arc = d3.arc()
+      .startAngle((d, i) => i * angleSlice)
+      .endAngle((d, i) => (i + 1) * angleSlice)
+      .innerRadius(0)
+      .outerRadius(d => 0); // Start from 0 for transition
 
-        // 4. Data Loading and Initialization
-        d3.csv(dataURL).then(data => {
-            allData = processData(data);
+    // Draw arcs
+    g.selectAll(".arc")
+      .data(dataset)
+      .enter()
+      .append("path")
+      .attr("class", "arc")
+      .attr("fill", "orange")
+      .attr("d", arc)
+      .on("mouseover", (event, d) => {
+        tooltip.transition().duration(200).style("opacity", 0.9);
+        tooltip.html(<strong>${d.subject}</strong><br/>${d.count})
+          .style("left", (event.pageX + 8) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mousemove", (event) => {
+        tooltip
+          .style("left", (event.pageX + 8) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseout", () => {
+        tooltip.transition().duration(300).style("opacity", 0);
+      })
+      .transition()
+      .duration(1000)
+      .attrTween("d", function(d, i) {
+        const interpOuter = d3.interpolateNumber(0, rScale(d.count));
+        return function(t) {
+          return d3.arc()
+            .startAngle(i * angleSlice)
+            .endAngle((i + 1) * angleSlice)
+            .innerRadius(0)
+            .outerRadius(interpOuter(t))();
+        };
+      });
 
-            minYear = d3.min(allData, d => d.Year);
-            maxYear = d3.max(allData, d => d.Year);
-
-            yearSlider.attr("min", minYear);
-            yearSlider.attr("max", maxYear);
-            yearSlider.attr("value", minYear);
-            yearLabel.text(minYear);
-
-            initializeVisualizations(allData);
-            updateVisualizations(allData, minYear);
-            document.getElementById("loading").remove();
-
-        }).catch(error => {
-            console.error("Error loading data:", error);
-            document.getElementById("loading").remove();
-            document.getElementById("errorBox").textContent = "Failed to load data. Please check the URL and try again.";
-        });
-
-       function initializeVisualizations(data) {
-            // 4.1 Parallel Coordinates Plot
-            const pcpScales = {};
-            dimensions.forEach(dim => {
-                pcpScales[dim] = d3.scaleLinear().range([heightPCP, 0]).domain(d3.extent(data, d => d[dim]));
-            });
-
-            dimensions.forEach(dim => {
-                gPCP.append("g")
-                    .attr("class", "axis")
-                    .attr("transform", `translate(${widthPCP / (dimensions.length - 1) * dimensions.indexOf(dim)},0)`)
-                    .call(d3.axisLeft(pcpScales[dim]))
-                  .append("text")
-                    .style("text-anchor", "middle")
-                    .attr("y", -10)
-                    .text(dim)
-                    .attr("font-size", "12px");
-            });
-
-
-            // 4.2 Radial Plot
-            const radialScale = d3.scaleLinear().domain([0, d3.max(data, d => Math.max(...dimensions.map(key => d[key]))) ]).range([0, radius]);
-            const radialColorScale = d3.scaleSequential(d3.interpolatePlasma).domain(d3.extent(data, d => d.Vegetation));
-
-            const numDimensions = dimensions.length;
-            const angleStep = 2 * Math.PI / numDimensions;
-
-            for (let i = 0; i < numDimensions; i++) {
-                const angle = i * angleStep - Math.PI / 2;
-                gRadial.append("line")
-                    .attr("x1", 0)
-                    .attr("y1", 0)
-                    .attr("x2", radius * Math.cos(angle))
-                    .attr("y2", radius * Math.sin(angle))
-                    .style("stroke", "#ccc")
-                    .style("stroke-width", "1px");
-
-                gRadial.append("text")
-                    .attr("x", (radius + 10) * Math.cos(angle))
-                    .attr("y", (radius + 10) * Math.sin(angle))
-                    .text(dimensions[i])
-                    .style("font-size", "10px")
-                    .style("text-anchor",
-                           angle > -Math.PI / 2 && angle < Math.PI / 2 ? "start" : "end");
-            }
-
-
-            // 4.3 Ternary Plot
-            const ternaryData = data.filter(d => d.Year === minYear);
-            if (ternaryData.length > 0) {
-                const aScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
-                const bScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
-                const cScale = d3.scaleLinear().domain([0, 100]).range([0, heightTernary]);
-
-                const triangle = d3.path();
-                triangle.moveTo(widthTernary / 2, 0);
-                triangle.lineTo(0, heightTernary);
-                triangle.lineTo(widthTernary, heightTernary);
-                triangle.closePath();
-
-                gTernary.append("path")
-                    .attr("d", triangle.toString())
-                    .attr("fill", "#eee")
-                    .attr("stroke", "#ccc");
-
-                // Create the ternary axes
-                for (let i = 0; i < 3; i++) {
-                    const label = ['Avg_Temp (°C)', 'Precipitation (mm)', 'Solar_Irradiance (W/m²)'][i];
-                    const angle = (i * 120 - 30) * Math.PI / 180;
-                    const x = widthTernary / 2 + heightTernary / 2 * Math.cos(angle);
-                    const y = heightTernary / 2 + heightTernary / 2 * Math.sin(angle);
-
-                    gTernary.append("text")
-                        .attr("x", x + 20 * Math.cos(angle))
-                        .attr("y", y + 20 * Math.sin(angle))
-                        .text(label)
-                        .style("font-size", "12px")
-                        .style("text-anchor", "middle");
-                }
-            }
-            else{
-                 gTernary.append("text")
-                  .attr("x", widthTernary / 2)
-                  .attr("y", heightTernary / 2)
-                  .style("text-anchor", "middle")
-                  .text("No data to display for this year")
-                  .style("font-size", "14px")
-                  .style("fill", "#666");
-            }
-        }
-
-        function updateVisualizations(data, selectedYear) {
-            const filteredData = data.filter(d => d.Year === selectedYear);
-
-            updateParallelCoordinates(filteredData);
-            updateRadialPlot(filteredData);
-
-            // Ternary plot update
-            const ternaryData = data.filter(d => d.Year === selectedYear);
-            updateTernaryPlot(ternaryData);
-        }
-
-
-
-        // 5. Update Chart Functions
-        function updateParallelCoordinates(data) {
-            const pcpScales = {};
-              dimensions.forEach(dim => {
-                pcpScales[dim] = d3.scaleLinear().range([heightPCP, 0]).domain(d3.extent(data, d => d[dim]));
-            });
-            const lines = gPCP.selectAll(".line")
-                .data(data, d => d.Year + "-" + d.Month);
-
-            lines.enter()
-                .append("path")
-                .attr("class", "line")
-                .attr("d", d => path(d, pcpScales))
-                .attr("stroke", d => colorScale(d.Vegetation))
-                .on("mouseover", showTooltip)
-                .on("mouseout", hideTooltip)
-                .attr("opacity", 0)
-                .transition()
-                .duration(500)
-                .attr("opacity", 0.7);
-
-            lines.transition()
-                .duration(500)
-                .attr("d", d => path(d, pcpScales))
-                .attr("stroke", d => colorScale(d.Vegetation));
-
-            lines.exit()
-                .transition()
-                .duration(500)
-                .attr("opacity", 0)
-                .remove();
-        }
-
-        function path(d, scales) {
-            return d3.line()(dimensions.map(dim => [scales[dim](d[dim]), scales[dim].range()[0] ]));
-        }
-
-
-        function updateRadialPlot(data) {
-            const radialScale = d3.scaleLinear().domain([0, d3.max(data, d => Math.max(...dimensions.map(key => d[key]))) ]).range([0, radius]);
-            const radialColorScale = d3.scaleSequential(d3.interpolatePlasma).domain(d3.extent(data, d => d.Vegetation));
-            const numDimensions = dimensions.length;
-            const angleStep = 2 * Math.PI / numDimensions;
-
-            const lines = gRadial.selectAll(".radial-line")
-                .data(data, d => d.Year + "-" + d.Month);
-
-              lines.enter()
-                .append("path")
-                .attr("class", "radial-line")
-                .attr("d", d => radialPath(d, radialScale, numDimensions, angleStep))
-                .attr("stroke", d => radialColorScale(d.Vegetation))
-                .attr("fill", d => radialColorScale(d.Vegetation))
-                .attr("fill-opacity", 0.3)
-                .attr("opacity", 0)
-                .transition()
-                .duration(500)
-                .attr("opacity", 0.7);
-
-            lines.transition()
-                .duration(500)
-                .attr("d", d => radialPath(d, radialScale, numDimensions, angleStep))
-                .attr("stroke", d => radialColorScale(d.Vegetation))
-                .attr("fill", d => radialColorScale(d.Vegetation));
-
-            lines.exit()
-                .transition()
-                .duration(500)
-                .attr("opacity", 0)
-                .remove();
-        }
-
-       function radialPath(d, scale, numDimensions, angleStep) {
-            let path = d3.path();
-            dimensions.forEach((dim, i) => {
-                const angle = i * angleStep - Math.PI / 2;
-                const r = scale(d[dim]);
-                const x = r * Math.cos(angle);
-                const y = r * Math.sin(angle);
-                if (i === 0) {
-                    path.moveTo(x, y);
-                } else {
-                    path.lineTo(x, y);
-                }
-            });
-            path.closePath();
-            return path.toString();
-        }
-
-
-
-       function updateTernaryPlot(data) {
-            const ternaryData = data.filter(d => {
-                const sum = d["Avg_Temp (°C)"] + d["Precipitation (mm)"] + d["Solar_Irradiance (W/m²)"];
-                return sum > 0;
-            }).map(d => {
-                const sum = d["Avg_Temp (°C)"] + d["Precipitation (mm)"] + d["Solar_Irradiance (W/m²)"];
-                return {
-                    ...d,
-                    a: (d["Avg_Temp (°C)"] / sum) * 100,
-                    b: (d["Precipitation (mm)"] / sum) * 100,
-                    c: (d["Solar_Irradiance (W/m²)"] / sum) * 100
-                };
-            });
-
-            const aScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
-            const bScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
-            const cScale = d3.scaleLinear().domain([0, 100]).range([0, heightTernary]);
-
-            const points = gTernary.selectAll("circle")
-                .data(ternaryData, d => d.Year + "-" + d.Month);
-
-            points.enter()
-                .append("circle")
-                .attr("r", 5)
-                .attr("cx", d => ternaryX(d.a, d.b, d.c, aScale, bScale))
-                .attr("cy", d => ternaryY(d.a, d.b, d.c, cScale))
-                .attr("fill", d => colorScale(d.Vegetation))
-                .attr("opacity", 0)
-                .transition()
-                .duration(500)
-                .attr("opacity", 0.7);
-
-            points.transition()
-                .duration(500)
-                .attr("cx", d => ternaryX(d.a, d.b, d.c, aScale, bScale))
-                .attr("cy", d => ternaryY(d.a, d.b, d.c, cScale))
-                .attr("fill", d => colorScale(d.Vegetation));
-
-            points.exit()
-                .transition()
-                .duration(500)
-                .attr("opacity", 0)
-                .remove();
-
-             if (ternaryData.length === 0) {
-                gTernary.selectAll("text.empty-message").data([0])
-                  .enter()
-                  .append("text")
-                    .attr("class", "empty-message")
-                    .attr("x", widthTernary / 2)
-                    .attr("y", heightTernary / 2)
-                    .style("text-anchor", "middle")
-                    .text("No data to display for this year")
-                    .style("font-size", "14px")
-                    .style("fill", "#666");
-              } else {
-                gTernary.selectAll("text.empty-message").remove();
-              }
-        }
-
-        function ternaryX(a, b, c, aScale, bScale) {
-            return aScale(a) + 0.5 * bScale(b);
-        }
-
-        function ternaryY(a, b, c, cScale) {
-            return cScale(c) * Math.sqrt(3) / 2;
-        }
-
-
-        yearSlider.on("input", function() {
-            const selectedYear = +this.value;
-            yearLabel.text(selectedYear);
-            updateVisualizations(allData, selectedYear);
-        });
-    </script>
+    // Add labels
+    g.selectAll(".label")
+      .data(dataset)
+      .enter()
+      .append("text")
+      .attr("class", "label")
+      .attr("text-anchor", "middle")
+      .attr("transform", (d, i) => {
+        const angle = (i + 0.5) * angleSlice - Math.PI / 2;
+        const r = rScale(d.count) + 20; // label offset
+        const x = Math.cos(angle) * r;
+        const y = Math.sin(angle) * r;
+        return translate(${x}, ${y});
+      })
+      .text(d => d.subject)
+      .style("font-size", "11px");
+  });
+</script>
 </body>
 </html>
