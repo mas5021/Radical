@@ -47,25 +47,26 @@
   <div id="tooltip" class="tooltip"></div>
   
   <script>
-    // The CSV URL for your merged climate data
+    // CSV URL for your merged climate data.
     const CLIMATE_CSV_URL = "https://gist.githubusercontent.com/mas5021/546c5cb1aaaaed863bb098b86f71503e/raw/1897725dabe21080a628a0022fa79942c48e1483/merged_climate.csv";
     
-    // List of variables to include in the radar chart.
+    // The variable names we expect in the CSV.
+    // (Adjust these if your CSV has different names.)
     const axes = ["SolarIrradiance", "CloudCover", "Precipitation", "Temperature", "VegetationIndex"];
     
     // Set up the SVG container.
     const svg = d3.select("#radarChart");
     const width = +svg.attr("width");
     const height = +svg.attr("height");
-    const margin = {top: 50, right: 50, bottom: 50, left: 50};
+    const margin = { top: 50, right: 50, bottom: 50, left: 50 };
     
-    // Center coordinates.
+    // Center the chart.
     const centerX = width / 2;
     const centerY = height / 2;
-    // The maximum radius for our radar chart.
+    // Define a maximum radius.
     const radius = Math.min(width, height) / 2 - Math.max(margin.left, margin.right);
     
-    // Create a group element at the center.
+    // Append a group element centered in the SVG.
     const g = svg.append("g")
                  .attr("transform", `translate(${centerX}, ${centerY})`);
     
@@ -73,6 +74,9 @@
     
     // Load the CSV file.
     d3.csv(CLIMATE_CSV_URL, d => {
+      // Log the keys of the CSV row for debugging.
+      // Uncomment the next line if you want to see the property names:
+      // console.log(Object.keys(d));
       return {
         Year: +d.Year,
         SolarIrradiance: +d.SolarIrradiance,
@@ -82,30 +86,34 @@
         VegetationIndex: +d.VegetationIndex
       };
     }).then(data => {
-      // Filter out rows that have any NaN for the key columns.
+      // Filter out rows that have any NaN in the key columns.
       data = data.filter(d =>
         !isNaN(d.Year) &&
         axes.every(axis => !isNaN(d[axis]))
       );
       
-      if(data.length === 0) {
-        console.error("No valid data rows found. Check CSV column names and data values.");
+      console.log("Filtered Data Length:", data.length);
+      if (data.length === 0) {
+        console.error("No valid data rows found. Please check the column names and data values in your CSV.");
         return;
       }
       
+      // For debugging, log the first few records.
+      console.log("Sample Data:", data.slice(0, 5));
+
       // For each variable, compute the average value.
       const averages = axes.map(axis => ({
         axis: axis,
         avg: d3.mean(data, d => d[axis])
       }));
       
-      // Also compute the extents for normalization on each axis.
+      // Also compute the extents (min & max) for each variable (for normalization).
       const extents = {};
       axes.forEach(axis => {
         extents[axis] = d3.extent(data, d => d[axis]);
       });
       
-      // Normalize the average for each variable to the [0,1] range.
+      // Normalize the average for each variable to [0, 1] based on that variable's extent.
       averages.forEach(d => {
         const [minVal, maxVal] = extents[d.axis];
         d.norm = (d.avg - minVal) / (maxVal - minVal);
@@ -113,7 +121,7 @@
       
       console.log("Averages:", averages);
       
-      // Draw the radar chart using these averaged normalized values.
+      // Draw the radar chart with the normalized average data.
       drawRadarChart(averages);
     }).catch(error => {
       console.error("Error loading CSV file:", error);
@@ -121,20 +129,19 @@
     
     // Function to draw the radar chart.
     function drawRadarChart(averages) {
-      // Number of axes in the radar chart.
-      const numAxes = averages.length;
-      // Angular scale: distribute axes evenly around the circle.
+      const numAxes = averages.length; // number of data dimensions
+      // Angular scale: evenly distributed angles around the circle.
       const angleScale = d3.scaleBand()
                            .domain(averages.map(d => d.axis))
                            .range([0, 2 * Math.PI])
                            .padding(0.1);
       
-      // Radial scale: maps normalized values (0 to 1) to radius (0 to defined radius)
+      // Radial scale: maps the normalized value to a radius
       const rScale = d3.scaleLinear()
                        .domain([0, 1])
                        .range([0, radius]);
       
-      // Draw reference circles (e.g., at 0.25, 0.5, 0.75, and 1.0)
+      // Draw reference circles (e.g., 25%, 50%, 75%, 100%).
       const levels = [0.25, 0.5, 0.75, 1.0];
       levels.forEach(level => {
         g.append("circle")
@@ -144,27 +151,26 @@
          .attr("stroke-dasharray", "2,2");
       });
       
-      // Draw radial lines for each axis.
+      // Draw radial axes for each variable.
       averages.forEach(d => {
         const angle = angleScale(d.axis) + angleScale.bandwidth()/2 - Math.PI/2;
-        const x = rScale(1) * Math.cos(angle);
-        const y = rScale(1) * Math.sin(angle);
+        const xPos = rScale(1) * Math.cos(angle);
+        const yPos = rScale(1) * Math.sin(angle);
         g.append("line")
          .attr("x1", 0)
          .attr("y1", 0)
-         .attr("x2", x)
-         .attr("y2", y)
+         .attr("x2", xPos)
+         .attr("y2", yPos)
          .attr("stroke", "#CDCDCD")
          .attr("stroke-width", 1);
-        // Axis label positioned just outside the outer circle.
+        // Label for the axis.
         g.append("text")
          .attr("x", (rScale(1) + 15) * Math.cos(angle))
          .attr("y", (rScale(1) + 15) * Math.sin(angle))
          .attr("text-anchor", "middle")
          .attr("class", "axisLabel")
          .text(d.axis)
-         .on("mouseover", (event, dd) => {
-           // On hover over axis labels, display a tooltip with the average value.
+         .on("mouseover", (event) => {
            tooltip.style("opacity", 1)
                   .html(`<strong>${d.axis}</strong><br>Avg: ${d.avg.toFixed(2)}`)
                   .style("left", (event.pageX + 10) + "px")
@@ -175,16 +181,17 @@
          });
       });
       
-      // Create a radar line generator using d3.lineRadial.
+      // Sort the averages in the order of the angle for consistency.
+      // (Assuming angleScale ordering is correct already.)
+      const radarData = averages.sort((a, b) => {
+        return angleScale(a.axis) - angleScale(b.axis);
+      });
+      
+      // Create a radar line generator using radial coordinates.
       const radarLine = d3.lineRadial()
                           .angle((d, i) => i * 2 * Math.PI / numAxes)
                           .radius(d => rScale(d.norm))
                           .curve(d3.curveLinearClosed);
-      
-      // Order the data in the same order as the axes.
-      const radarData = averages.sort((a, b) => {
-        return angleScale(a.axis) - angleScale(b.axis);
-      });
       
       // Draw the radar polygon.
       g.append("path")
@@ -194,7 +201,7 @@
        .attr("fill-opacity", 0.5)
        .attr("stroke", "#2980b9")
        .attr("stroke-width", 2)
-       .on("mouseover", (event, d) => {
+       .on("mouseover", (event) => {
          tooltip.style("opacity", 1)
                 .html(radarData.map(v => `<strong>${v.axis}:</strong> ${v.avg.toFixed(2)}`).join("<br>"))
                 .style("left", (event.pageX + 10) + "px")
@@ -204,7 +211,7 @@
          tooltip.style("opacity", 0);
        });
       
-      // Draw small circles for each vertex of the radar chart.
+      // Draw circles at each vertex.
       g.selectAll(".vertex")
        .data(radarData)
        .enter()
