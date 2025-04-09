@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>US Data Dashboard: Small Multiples</title>
+  <title>Climate Radar Chart</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
     body {
@@ -14,46 +14,25 @@
     h1 {
       margin-bottom: 1rem;
     }
-    /* Dashboard grid container */
-    #dashboard {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-      max-width: 1200px;
-      margin: auto;
-    }
-    .chart-container {
-      background: #fff;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .chart-title {
-      font-weight: bold;
-      margin-bottom: 5px;
-    }
     svg {
-      width: 100%;
-      height: 300px;
+      background: #fff;
+      border: 1px solid #ddd;
+      margin: auto;
+      display: block;
     }
-    .axis path, .axis line {
-      stroke: #333;
-      shape-rendering: crispEdges;
+    .axisLabel {
+      font-size: 12px;
+      fill: #333;
     }
-    .line {
-      fill: none;
-      stroke-width: 2;
-    }
-    .dot {
-      stroke: #fff;
-      stroke-width: 1px;
+    .legend {
+      font-size: 12px;
+      fill: #333;
     }
     .tooltip {
       position: absolute;
-      background: rgba(0,0,0,0.8);
+      background: rgba(0, 0, 0, 0.8);
       color: #fff;
-      padding: 8px;
+      padding: 6px 10px;
       border-radius: 4px;
       pointer-events: none;
       font-size: 12px;
@@ -63,164 +42,188 @@
   </style>
 </head>
 <body>
-  <h1>US Data Dashboard: Trends in Agriculture & Climate</h1>
-  <div id="dashboard">
-    <!-- Each chart will be inserted into these divs -->
-    <div class="chart-container" id="chart-crop">
-      <div class="chart-title">Crop Production (Historical)</div>
-    </div>
-    <div class="chart-container" id="chart-co2">
-      <div class="chart-title">CO₂ Emissions (Historical)</div>
-    </div>
-    <div class="chart-container" id="chart-temp">
-      <div class="chart-title">Temperature (2020–2024)</div>
-    </div>
-    <div class="chart-container" id="chart-veg">
-      <div class="chart-title">Vegetation Index (2020–2024)</div>
-    </div>
-  </div>
-  
+  <h1>Climate Radar Chart – Average Values</h1>
+  <svg id="radarChart" width="700" height="700"></svg>
   <div id="tooltip" class="tooltip"></div>
   
   <script>
-    // CSV URLs (provided by you)
-    const CROP_CSV_URL = "https://gist.githubusercontent.com/mystrycodes/3d3cf36c88a4f23a187cb4e12a835e10/raw/5aebb1fc334be000f4b756db6d5c83adf71e89ab/CropProduction.csv";
-    const CO2_CSV_URL  = "https://gist.githubusercontent.com/mystrycodes/f3e133db6c35f1f7180296e872441fe4/raw/Co2emmission.csv";
-    const CLIMATE_CSV_URL = "https://gist.githubusercontent.com/mystrycodes/0e4190865121859997eec1fc2d5b4dcd/raw/d10453ccf854feb48e10319eb8025a973f938abe/climate.csv";
-
-    // Helper function to check if a record is for the US.
-    function isUS(country) {
-      if (!country) return false;
-      const lower = country.toLowerCase();
-      return lower.includes("united states") || lower.includes("usa");
-    }
+    // The CSV URL for your merged climate data
+    const CLIMATE_CSV_URL = "https://gist.githubusercontent.com/mas5021/546c5cb1aaaaed863bb098b86f71503e/raw/1897725dabe21080a628a0022fa79942c48e1483/merged_climate.csv";
     
-    // Load datasets concurrently.
-    Promise.all([
-      // Crop production: filter for US and years <= 2020.
-      d3.csv(CROP_CSV_URL, d => ({
-        year: +d.TIME,
-        production: +d.Value,
-        country: d.Country
-      })).then(data => data.filter(d => isUS(d.country) && d.year <= 2020)),
-      
-      // CO2 Emission: filter for US and years <= 2020.
-      d3.csv(CO2_CSV_URL, d => ({
-        year: +d.Year,
-        co2: +d.total_emission,
-        country: d.Country
-      })).then(data => data.filter(d => isUS(d.country) && d.year <= 2020)),
-      
-      // Climate: we assume climate data has columns Year, Temperature, VegetationIndex, SolarIrradiance, CloudCover, Precipitation.
-      // Use only the recent period (2020–2024).
-      d3.csv(CLIMATE_CSV_URL, d => ({
-        year: +d.Year,
-        Temperature: +d.Temperature,
-        VegetationIndex: +d.VegetationIndex,
+    // List of variables to include in the radar chart.
+    const axes = ["SolarIrradiance", "CloudCover", "Precipitation", "Temperature", "VegetationIndex"];
+    
+    // Set up the SVG container.
+    const svg = d3.select("#radarChart");
+    const width = +svg.attr("width");
+    const height = +svg.attr("height");
+    const margin = {top: 50, right: 50, bottom: 50, left: 50};
+    
+    // Center coordinates.
+    const centerX = width / 2;
+    const centerY = height / 2;
+    // The maximum radius for our radar chart.
+    const radius = Math.min(width, height) / 2 - Math.max(margin.left, margin.right);
+    
+    // Create a group element at the center.
+    const g = svg.append("g")
+                 .attr("transform", `translate(${centerX}, ${centerY})`);
+    
+    const tooltip = d3.select("#tooltip");
+    
+    // Load the CSV file.
+    d3.csv(CLIMATE_CSV_URL, d => {
+      return {
+        Year: +d.Year,
         SolarIrradiance: +d.SolarIrradiance,
         CloudCover: +d.CloudCover,
-        Precipitation: +d.Precipitation
-      })).then(data => data.filter(d => d.year >= 2020))
-    ]).then(([cropData, co2Data, climateData]) => {
-      // Log data counts for debugging.
-      console.log("Crop Data (US, <=2020):", cropData.length, cropData);
-      console.log("CO2 Data (US, <=2020):", co2Data.length, co2Data);
-      console.log("Climate Data (>=2020):", climateData.length, climateData);
+        Precipitation: +d.Precipitation,
+        Temperature: +d.Temperature,
+        VegetationIndex: +d.VegetationIndex
+      };
+    }).then(data => {
+      // Filter out rows that have any NaN for the key columns.
+      data = data.filter(d =>
+        !isNaN(d.Year) &&
+        axes.every(axis => !isNaN(d[axis]))
+      );
       
-      // Draw small line charts for the four variables.
-      drawLineChart("chart-crop", cropData, "year", "production", "Crop Production (tons)", "Year", "Production (t)");
-      drawLineChart("chart-co2", co2Data, "year", "co2", "CO₂ Emissions (t)", "Year", "CO₂ (t)");
-      drawLineChart("chart-temp", climateData, "year", "Temperature", "Temperature (°C)", "Year", "Temperature (°C)");
-      drawLineChart("chart-veg", climateData, "year", "VegetationIndex", "Vegetation Index", "Year", "Vegetation Index");
+      if(data.length === 0) {
+        console.error("No valid data rows found. Check CSV column names and data values.");
+        return;
+      }
+      
+      // For each variable, compute the average value.
+      const averages = axes.map(axis => ({
+        axis: axis,
+        avg: d3.mean(data, d => d[axis])
+      }));
+      
+      // Also compute the extents for normalization on each axis.
+      const extents = {};
+      axes.forEach(axis => {
+        extents[axis] = d3.extent(data, d => d[axis]);
+      });
+      
+      // Normalize the average for each variable to the [0,1] range.
+      averages.forEach(d => {
+        const [minVal, maxVal] = extents[d.axis];
+        d.norm = (d.avg - minVal) / (maxVal - minVal);
+      });
+      
+      console.log("Averages:", averages);
+      
+      // Draw the radar chart using these averaged normalized values.
+      drawRadarChart(averages);
     }).catch(error => {
-      console.error("Error loading data:", error);
+      console.error("Error loading CSV file:", error);
     });
     
-    // Function to draw a small multiple line chart in a given container.
-    function drawLineChart(containerId, data, xKey, yKey, title, xAxisLabel, yAxisLabel) {
-      // Set up dimensions for each small chart.
-      const containerWidth = 400;
-      const containerHeight = 300;
-      const margin = { top: 30, right: 30, bottom: 40, left: 50 };
-      const width = containerWidth - margin.left - margin.right;
-      const height = containerHeight - margin.top - margin.bottom;
+    // Function to draw the radar chart.
+    function drawRadarChart(averages) {
+      // Number of axes in the radar chart.
+      const numAxes = averages.length;
+      // Angular scale: distribute axes evenly around the circle.
+      const angleScale = d3.scaleBand()
+                           .domain(averages.map(d => d.axis))
+                           .range([0, 2 * Math.PI])
+                           .padding(0.1);
       
-      // Append an SVG into the container div.
-      const svg = d3.select("#" + containerId)
-                    .append("svg")
-                    .attr("width", containerWidth)
-                    .attr("height", containerHeight);
+      // Radial scale: maps normalized values (0 to 1) to radius (0 to defined radius)
+      const rScale = d3.scaleLinear()
+                       .domain([0, 1])
+                       .range([0, radius]);
       
-      const g = svg.append("g")
-                   .attr("transform", `translate(${margin.left}, ${margin.top})`);
+      // Draw reference circles (e.g., at 0.25, 0.5, 0.75, and 1.0)
+      const levels = [0.25, 0.5, 0.75, 1.0];
+      levels.forEach(level => {
+        g.append("circle")
+         .attr("r", rScale(level))
+         .attr("fill", "none")
+         .attr("stroke", "#CDCDCD")
+         .attr("stroke-dasharray", "2,2");
+      });
       
-      // x-scale: linear scale based on xKey (e.g., year).
-      const xScale = d3.scaleLinear()
-                       .domain(d3.extent(data, d => d[xKey])).nice()
-                       .range([0, width]);
+      // Draw radial lines for each axis.
+      averages.forEach(d => {
+        const angle = angleScale(d.axis) + angleScale.bandwidth()/2 - Math.PI/2;
+        const x = rScale(1) * Math.cos(angle);
+        const y = rScale(1) * Math.sin(angle);
+        g.append("line")
+         .attr("x1", 0)
+         .attr("y1", 0)
+         .attr("x2", x)
+         .attr("y2", y)
+         .attr("stroke", "#CDCDCD")
+         .attr("stroke-width", 1);
+        // Axis label positioned just outside the outer circle.
+        g.append("text")
+         .attr("x", (rScale(1) + 15) * Math.cos(angle))
+         .attr("y", (rScale(1) + 15) * Math.sin(angle))
+         .attr("text-anchor", "middle")
+         .attr("class", "axisLabel")
+         .text(d.axis)
+         .on("mouseover", (event, dd) => {
+           // On hover over axis labels, display a tooltip with the average value.
+           tooltip.style("opacity", 1)
+                  .html(`<strong>${d.axis}</strong><br>Avg: ${d.avg.toFixed(2)}`)
+                  .style("left", (event.pageX + 10) + "px")
+                  .style("top", (event.pageY - 20) + "px");
+         })
+         .on("mouseout", () => {
+           tooltip.style("opacity", 0);
+         });
+      });
       
-      // y-scale: linear scale based on yKey.
-      const yScale = d3.scaleLinear()
-                       .domain(d3.extent(data, d => d[yKey])).nice()
-                       .range([height, 0]);
+      // Create a radar line generator using d3.lineRadial.
+      const radarLine = d3.lineRadial()
+                          .angle((d, i) => i * 2 * Math.PI / numAxes)
+                          .radius(d => rScale(d.norm))
+                          .curve(d3.curveLinearClosed);
       
-      // Add x-axis.
-      g.append("g")
-       .attr("transform", `translate(0, ${height})`)
-       .call(d3.axisBottom(xScale).ticks(5).tickFormat(d3.format("d")));
+      // Order the data in the same order as the axes.
+      const radarData = averages.sort((a, b) => {
+        return angleScale(a.axis) - angleScale(b.axis);
+      });
       
-      // Add y-axis.
-      g.append("g")
-       .call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format(",.0f")));
-      
-      // Add axis labels.
-      g.append("text")
-       .attr("x", width / 2)
-       .attr("y", height + 30)
-       .attr("text-anchor", "middle")
-       .style("font-size", "12px")
-       .text(xAxisLabel);
-      
-      g.append("text")
-       .attr("transform", "rotate(-90)")
-       .attr("x", -height / 2)
-       .attr("y", -40)
-       .attr("text-anchor", "middle")
-       .style("font-size", "12px")
-       .text(yAxisLabel);
-      
-      // Line generator.
-      const lineGen = d3.line()
-                        .x(d => xScale(d[xKey]))
-                        .y(d => yScale(d[yKey]))
-                        .curve(d3.curveMonotoneX);
-      
-      // Draw the line.
+      // Draw the radar polygon.
       g.append("path")
-       .datum(data)
-       .attr("fill", "none")
-       .attr("stroke", "#2c3e50")
+       .datum(radarData)
+       .attr("d", radarLine)
+       .attr("fill", "#2980b9")
+       .attr("fill-opacity", 0.5)
+       .attr("stroke", "#2980b9")
        .attr("stroke-width", 2)
-       .attr("d", lineGen);
-      
-      // Draw circles at data points.
-      g.selectAll("circle")
-       .data(data)
-       .enter()
-       .append("circle")
-       .attr("cx", d => xScale(d[xKey]))
-       .attr("cy", d => yScale(d[yKey]))
-       .attr("r", 3)
-       .attr("fill", "#e74c3c")
        .on("mouseover", (event, d) => {
-         d3.select("#tooltip")
-           .style("opacity", 1)
-           .html(`${title}<br>${xKey}: ${d[xKey]}<br>${yKey}: ${d[yKey]}`)
-           .style("left", (event.pageX + 10) + "px")
-           .style("top", (event.pageY - 20) + "px");
+         tooltip.style("opacity", 1)
+                .html(radarData.map(v => `<strong>${v.axis}:</strong> ${v.avg.toFixed(2)}`).join("<br>"))
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 20) + "px");
        })
        .on("mouseout", () => {
-         d3.select("#tooltip").style("opacity", 0);
+         tooltip.style("opacity", 0);
+       });
+      
+      // Draw small circles for each vertex of the radar chart.
+      g.selectAll(".vertex")
+       .data(radarData)
+       .enter()
+       .append("circle")
+       .attr("class", "vertex")
+       .attr("r", 4)
+       .attr("cx", (d, i) => rScale(d.norm) * Math.cos(i * 2 * Math.PI / numAxes - Math.PI/2))
+       .attr("cy", (d, i) => rScale(d.norm) * Math.sin(i * 2 * Math.PI / numAxes - Math.PI/2))
+       .attr("fill", "#fff")
+       .attr("stroke", "#2980b9")
+       .attr("stroke-width", 2)
+       .on("mouseover", (event, d) => {
+         tooltip.style("opacity", 1)
+                .html(`<strong>${d.axis}</strong><br>Avg: ${d.avg.toFixed(2)}`)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 20) + "px");
+       })
+       .on("mouseout", () => {
+         tooltip.style("opacity", 0);
        });
     }
   </script>
