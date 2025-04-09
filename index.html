@@ -121,7 +121,7 @@
 
     <script>
        // Replace this URL with your dataset's public Gist URL for the climate data.
-        const dataURL = "https://gist.githubusercontent.com/mystrycodes/0e4190865121859997eec1fc2d5b4dcd/raw/d10453ccf854feb48e10319eb8025a973f938abe/climate.csv";
+        const dataURL = "https://gist.githubusercontent.com/mas5021/546c5cb1aaaaed863bb098b86f71503e/raw/1897725dabe21080a628a0022fa79942c48e1483/merged_climate.csv";
 
         // Function to compute a synthetic vegetation index:
         function computeVegetationIndex(d) {
@@ -251,8 +251,8 @@
 
 
             // 4.3 Ternary Plot
-              const ternaryData = data.filter(d => d.Year === minYear);
-              if(ternaryData.length > 0){
+            const ternaryData = data.filter(d => d.Year === minYear);
+            if (ternaryData.length > 0) {
                 const aScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
                 const bScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
                 const cScale = d3.scaleLinear().domain([0, 100]).range([0, heightTernary]);
@@ -268,9 +268,9 @@
                     .attr("fill", "#eee")
                     .attr("stroke", "#ccc");
 
-                 // Create the ternary axes
+                // Create the ternary axes
                 for (let i = 0; i < 3; i++) {
-                    const label = ['A', 'B', 'C'][i];
+                    const label = ['Avg_Temp (°C)', 'Precipitation (mm)', 'Solar_Irradiance (W/m²)'][i];
                     const angle = (i * 120 - 30) * Math.PI / 180;
                     const x = widthTernary / 2 + heightTernary / 2 * Math.cos(angle);
                     const y = heightTernary / 2 + heightTernary / 2 * Math.sin(angle);
@@ -279,10 +279,19 @@
                         .attr("x", x + 20 * Math.cos(angle))
                         .attr("y", y + 20 * Math.sin(angle))
                         .text(label)
-                        .style("font-size", "14px")
+                        .style("font-size", "12px")
                         .style("text-anchor", "middle");
                 }
-              }
+            }
+            else{
+                 gTernary.append("text")
+                  .attr("x", widthTernary / 2)
+                  .attr("y", heightTernary / 2)
+                  .style("text-anchor", "middle")
+                  .text("No data to display for this year")
+                  .style("font-size", "14px")
+                  .style("fill", "#666");
+            }
         }
 
         function updateVisualizations(data, selectedYear) {
@@ -389,19 +398,32 @@
 
 
 
-        function updateTernaryPlot(data) {
+       function updateTernaryPlot(data) {
+            const ternaryData = data.filter(d => {
+                const sum = d["Avg_Temp (°C)"] + d["Precipitation (mm)"] + d["Solar_Irradiance (W/m²)"];
+                return sum > 0;
+            }).map(d => {
+                const sum = d["Avg_Temp (°C)"] + d["Precipitation (mm)"] + d["Solar_Irradiance (W/m²)"];
+                return {
+                    ...d,
+                    a: (d["Avg_Temp (°C)"] / sum) * 100,
+                    b: (d["Precipitation (mm)"] / sum) * 100,
+                    c: (d["Solar_Irradiance (W/m²)"] / sum) * 100
+                };
+            });
+
             const aScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
             const bScale = d3.scaleLinear().domain([0, 100]).range([0, widthTernary / 2]);
             const cScale = d3.scaleLinear().domain([0, 100]).range([0, heightTernary]);
 
             const points = gTernary.selectAll("circle")
-                .data(data, d => d.Year + "-" + d.Month);
+                .data(ternaryData, d => d.Year + "-" + d.Month);
 
             points.enter()
                 .append("circle")
                 .attr("r", 5)
-                .attr("cx", d => ternaryX(d["Avg_Temp (°C)"], d["Precipitation (mm)"], d["Solar_Irradiance (W/m²)"], aScale, bScale))
-                .attr("cy", d => ternaryY(d["Avg_Temp (°C)"], d["Precipitation (mm)"], d["Solar_Irradiance (W/m²)"], cScale))
+                .attr("cx", d => ternaryX(d.a, d.b, d.c, aScale, bScale))
+                .attr("cy", d => ternaryY(d.a, d.b, d.c, cScale))
                 .attr("fill", d => colorScale(d.Vegetation))
                 .attr("opacity", 0)
                 .transition()
@@ -410,8 +432,8 @@
 
             points.transition()
                 .duration(500)
-                .attr("cx", d => ternaryX(d["Avg_Temp (°C)"], d["Precipitation (mm)"], d["Solar_Irradiance (W/m²)"], aScale, bScale))
-                .attr("cy", d => ternaryY(d["Avg_Temp (°C)"], d["Precipitation (mm)"], d["Solar_Irradiance (W/m²)"], cScale))
+                .attr("cx", d => ternaryX(d.a, d.b, d.c, aScale, bScale))
+                .attr("cy", d => ternaryY(d.a, d.b, d.c, cScale))
                 .attr("fill", d => colorScale(d.Vegetation));
 
             points.exit()
@@ -419,6 +441,21 @@
                 .duration(500)
                 .attr("opacity", 0)
                 .remove();
+
+             if (ternaryData.length === 0) {
+                gTernary.selectAll("text.empty-message").data([0])
+                  .enter()
+                  .append("text")
+                    .attr("class", "empty-message")
+                    .attr("x", widthTernary / 2)
+                    .attr("y", heightTernary / 2)
+                    .style("text-anchor", "middle")
+                    .text("No data to display for this year")
+                    .style("font-size", "14px")
+                    .style("fill", "#666");
+              } else {
+                gTernary.selectAll("text.empty-message").remove();
+              }
         }
 
         function ternaryX(a, b, c, aScale, bScale) {
