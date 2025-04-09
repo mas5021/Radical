@@ -2,185 +2,267 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Climate Chord Diagram – Pairwise Correlations</title>
+  <title>Radial Simulation: Future Crop Yields &amp; CO₂ Emissions</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: 'Segoe UI', sans-serif;
       background: #f8f9fa;
       text-align: center;
-      margin: 20px;
+      margin: 2rem;
     }
     h1 {
+      color: #2c3e50;
+      margin-bottom: 0.5rem;
+    }
+    .controls {
       margin-bottom: 1rem;
     }
+    .controls label {
+      margin-right: 1rem;
+      font-weight: bold;
+    }
+    .chart-container {
+      position: relative;
+      display: inline-block;
+    }
     svg {
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
       margin: auto;
       display: block;
-      background: #fff;
-      border: 1px solid #ddd;
     }
     .tooltip {
       position: absolute;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.9);
       color: #fff;
-      padding: 6px 10px;
-      font-size: 12px;
+      padding: 8px 12px;
       border-radius: 4px;
       pointer-events: none;
+      font-size: 0.9rem;
       opacity: 0;
       transition: opacity 0.2s;
     }
   </style>
 </head>
 <body>
-  <h1>Climate Chord Diagram</h1>
-  <svg id="chart" width="700" height="700"></svg>
-  <div id="tooltip" class="tooltip"></div>
+  <h1>Radial Simulation: Future U.S. Crop Yields &amp; CO₂ Emissions</h1>
+  <div class="controls">
+    <!-- Sliders to adjust policy levers -->
+    <label for="fertSlider">Fertilizer Usage (% of baseline):
+      <input type="range" id="fertSlider" min="50" max="150" value="100" step="1">
+      <span id="fertLabel">100%</span>
+    </label>
+    <label for="co2Slider">CO₂ Emission Reduction Target (%):
+      <input type="range" id="co2Slider" min="0" max="50" value="0" step="1">
+      <span id="co2Label">0%</span>
+    </label>
+    <label for="irrSlider">Irrigation Level (% of baseline):
+      <input type="range" id="irrSlider" min="50" max="150" value="100" step="1">
+      <span id="irrLabel">100%</span>
+    </label>
+  </div>
+  
+  <div class="chart-container">
+    <svg id="chart" width="800" height="800"></svg>
+    <div id="tooltip" class="tooltip"></div>
+  </div>
   
   <script>
-    // URL of merged climate CSV
-    const CSV_URL = "https://gist.githubusercontent.com/mas5021/546c5cb1aaaaed863bb098b86f71503e/raw/1897725dabe21080a628a0022fa79942c48e1483/merged_climate.csv";
-    
-    // List of climate variables to analyze.
-    const vars = ["SolarIrradiance", "CloudCover", "Precipitation", "Temperature", "VegetationIndex"];
-    
-    // Set up SVG dimensions.
-    const svg = d3.select("#chart"),
-          width = +svg.attr("width"),
-          height = +svg.attr("height"),
-          outerRadius = Math.min(width, height) / 2 - 40,
-          innerRadius = outerRadius - 20;
-    
-    const g = svg.append("g")
-                 .attr("transform", `translate(${width/2}, ${height/2})`);
-    
+    // Simulation parameters.
+    const baselineYield = 100;  // baseline crop yield in arbitrary units
+    const baselineCO2 = 100;    // baseline CO₂ emissions in arbitrary units
+    const startYear = 2025;
+    const endYear = 2035;
+    const years = d3.range(startYear, endYear + 1);
+
+    // Growth assumptions.
+    const yieldGrowthRate = 0.02;     // 2% annual increase in yield
+    const emissionDeclineRate = 0.01; // 1% annual decline in emissions (due to efficiency)
+
+    // Create slider interactivity.
+    const fertSlider = document.getElementById("fertSlider");
+    const co2Slider = document.getElementById("co2Slider");
+    const irrSlider = document.getElementById("irrSlider");
+    const fertLabel = document.getElementById("fertLabel");
+    const co2Label = document.getElementById("co2Label");
+    const irrLabel = document.getElementById("irrLabel");
+
+    fertSlider.oninput = () => { fertLabel.innerText = fertSlider.value + "%"; updateSimulation(); };
+    co2Slider.oninput = () => { co2Label.innerText = co2Slider.value + "%"; updateSimulation(); };
+    irrSlider.oninput = () => { irrLabel.innerText = irrSlider.value + "%"; updateSimulation(); };
+
+    // Set up SVG container.
+    const svg = d3.select("#chart").append("g")
+                  .attr("transform", "translate(0,0)"); // We will center later.
     const tooltip = d3.select("#tooltip");
-    
-    // Helper: Compute Pearson correlation coefficient between two arrays.
-    function correlation(x, y) {
-      const n = x.length;
-      const meanX = d3.mean(x);
-      const meanY = d3.mean(y);
-      let num = 0, denX = 0, denY = 0;
-      for (let i = 0; i < n; i++) {
-        const dx = x[i] - meanX;
-        const dy = y[i] - meanY;
-        num += dx * dy;
-        denX += dx * dx;
-        denY += dy * dy;
-      }
-      return num / Math.sqrt(denX * denY);
+
+    // Radial chart configuration.
+    const svgWidth = 800, svgHeight = 800;
+    const centerX = svgWidth / 2, centerY = svgHeight / 2;
+    // For our radial plot, we define two distinct radial scales:
+    // one for yield (inner ring) and one for CO₂ (outer ring).
+    // Choose inner range: [50, 250] and outer range: [250, 450].
+    let radiusYield, radiusCO2, angleScale;
+
+    // This function computes the simulation predictions and draws the radial chart.
+    function updateSimulation() {
+      const fertFactor = fertSlider.value / 100.0;
+      const irrFactor = irrSlider.value / 100.0;
+      const reduction = co2Slider.value / 100.0;
+
+      // Compute predictions for each year.
+      const yieldPredictions = years.map(year => {
+        const growthMultiplier = 1 + yieldGrowthRate * (year - startYear);
+        return { year, yield: baselineYield * fertFactor * irrFactor * growthMultiplier };
+      });
+
+      const co2Predictions = years.map(year => {
+        const efficiencyMultiplier = 1 - emissionDeclineRate * (year - startYear);
+        return { year, co2: baselineCO2 * fertFactor * (1 - reduction) * efficiencyMultiplier };
+      });
+
+      // Merge predictions by year.
+      const mergedPredictions = years.map(year => {
+        const yObj = yieldPredictions.find(d => d.year === year);
+        const cObj = co2Predictions.find(d => d.year === year);
+        return { year, yield: yObj ? yObj.yield : null, co2: cObj ? cObj.co2 : null };
+      });
+      console.log("Merged Predictions:", mergedPredictions);
+      
+      drawRadialChart(mergedPredictions);
     }
-    
-    // Load CSV, parse numeric values and compute a correlation matrix.
-    d3.csv(CSV_URL, d => {
-      return {
-        Year: +d.Year,
-        SolarIrradiance: +d.SolarIrradiance,
-        CloudCover: +d.CloudCover,
-        Precipitation: +d.Precipitation,
-        Temperature: +d.Temperature,
-        VegetationIndex: +d.VegetationIndex
-      };
-    }).then(data => {
-      // Filter out rows with missing values.
-      data = data.filter(d => !isNaN(d.Year) && vars.every(v => !isNaN(d[v])));
-      console.log("Data loaded: ", data.length, "rows");
+
+    function drawRadialChart(data) {
+      // Clear any previous drawings.
+      svg.selectAll("*").remove();
+      // Center the drawing group.
+      const chartG = svg.append("g")
+                        .attr("transform", `translate(${centerX},${centerY})`);
       
-      if (data.length === 0) {
-        console.error("No valid data rows. Check CSV column names and numeric values.");
-        return;
+      // Create an angle scale mapping year from startYear to endYear into [0, 2π].
+      angleScale = d3.scaleLinear()
+                     .domain([startYear, endYear])
+                     .range([0, 2 * Math.PI]);
+      
+      // Create two radial scales:
+      radiusYield = d3.scaleLinear()
+                      .domain([0, d3.max(data, d => d.yield)])
+                      .range([50, 250])
+                      .nice();
+      
+      radiusCO2 = d3.scaleLinear()
+                      .domain([0, d3.max(data, d => d.co2)])
+                      .range([250, 450])
+                      .nice();
+      
+      // Function to convert polar coordinates to Cartesian.
+      function polarToCartesian(angle, r) {
+        return {
+          x: r * Math.cos(angle - Math.PI / 2),
+          y: r * Math.sin(angle - Math.PI / 2)
+        };
       }
       
-      // For each variable, extract an array of its values.
-      let valuesByVar = {};
-      vars.forEach(v => {
-        valuesByVar[v] = data.map(d => d[v]);
+      // Draw radial grid for yield (inner ring).
+      const yieldTicks = radiusYield.ticks(5);
+      yieldTicks.forEach(t => {
+        chartG.append("circle")
+              .attr("r", radiusYield(t))
+              .attr("fill", "none")
+              .attr("stroke", "#eee");
+        chartG.append("text")
+              .attr("x", 5)
+              .attr("y", -radiusYield(t))
+              .attr("dy", "0.3em")
+              .style("font-size", "10px")
+              .style("fill", "#2ecc71")
+              .text(t.toFixed(1));
       });
       
-      // Build a square matrix where entry [i][j] is the absolute correlation between variable i and j.
-      const matrix = [];
-      for(let i = 0; i < vars.length; i++) {
-        matrix[i] = [];
-        for(let j = 0; j < vars.length; j++) {
-          const corrVal = correlation(valuesByVar[vars[i]], valuesByVar[vars[j]]);
-          matrix[i][j] = Math.abs(corrVal); // use absolute correlation for chord widths
-        }
-      }
+      // Draw radial grid for CO₂ (outer ring).
+      const co2Ticks = radiusCO2.ticks(5);
+      co2Ticks.forEach(t => {
+        chartG.append("circle")
+              .attr("r", radiusCO2(t))
+              .attr("fill", "none")
+              .attr("stroke", "#eee");
+        chartG.append("text")
+              .attr("x", -5)
+              .attr("y", radiusCO2(t))
+              .attr("dy", "-0.3em")
+              .style("font-size", "10px")
+              .style("fill", "#e74c3c")
+              .attr("text-anchor", "end")
+              .text(t.toFixed(1));
+      });
       
-      console.log("Correlation Matrix:", matrix);
+      // Prepare radial line generator for yield.
+      const yieldLine = d3.line()
+                          .x(d => polarToCartesian(angleScale(d.year), radiusYield(d.yield)).x)
+                          .y(d => polarToCartesian(angleScale(d.year), radiusYield(d.yield)).y)
+                          .curve(d3.curveCardinal);
       
-      // Create the chord layout using the matrix.
-      const chord = d3.chord()
-                      .padAngle(0.05)
-                      .sortSubgroups(d3.descending)(matrix);
+      // Prepare radial line generator for CO₂.
+      const co2Line = d3.line()
+                          .x(d => polarToCartesian(angleScale(d.year), radiusCO2(d.co2)).x)
+                          .y(d => polarToCartesian(angleScale(d.year), radiusCO2(d.co2)).y)
+                          .curve(d3.curveCardinal);
       
-      // Define arc generator for outer arcs.
-      const arc = d3.arc()
-                    .innerRadius(outerRadius)
-                    .outerRadius(outerRadius + 20);
+      // Draw yield radial line (inner ring) in green.
+      chartG.append("path")
+            .datum(data)
+            .attr("d", yieldLine)
+            .attr("fill", "none")
+            .attr("stroke", "#2ecc71")
+            .attr("stroke-width", 3);
       
-      // Define ribbon generator for chords.
-      const ribbon = d3.ribbon()
-                       .radius(innerRadius);
+      // Draw CO₂ radial line (outer ring) in red.
+      chartG.append("path")
+            .datum(data)
+            .attr("d", co2Line)
+            .attr("fill", "none")
+            .attr("stroke", "#e74c3c")
+            .attr("stroke-width", 3);
       
-      // Draw outer arcs for each variable.
-      const group = g.selectAll("g.group")
-                     .data(chord.groups)
-                     .enter().append("g")
-                     .attr("class", "group");
+      // Draw yield points and add tooltips.
+      chartG.selectAll(".yield-point")
+            .data(data)
+            .enter()
+            .append("circle")
+            .attr("class", "yield-point")
+            .attr("cx", d => polarToCartesian(angleScale(d.year), radiusYield(d.yield)).x)
+            .attr("cy", d => polarToCartesian(angleScale(d.year), radiusYield(d.yield)).y)
+            .attr("r", 4)
+            .attr("fill", "#2ecc71")
+            .on("mouseover", (event, d) => {
+              tooltip.style("opacity", 1)
+                     .html(`<strong>Year:</strong> ${d.year}<br><strong>Yield:</strong> ${d.yield.toFixed(1)} units`)
+                     .style("left", (event.pageX + 10) + "px")
+                     .style("top", (event.pageY - 30) + "px");
+            })
+            .on("mouseout", () => tooltip.style("opacity", 0));
       
-      group.append("path")
-           .attr("d", arc)
-           .attr("fill", (d, i) => d3.schemeCategory10[i % 10])
-           .attr("stroke", "#fff")
-           .on("mouseover", (event, d) => {
-             tooltip.transition().duration(200).style("opacity", 0.9);
-             tooltip.html(vars[d.index])
-                    .style("left", (event.pageX + 10) + "px")
-                    .style("top", (event.pageY - 20) + "px");
-           })
-           .on("mouseout", () => {
-             tooltip.transition().duration(500).style("opacity", 0);
-           });
-      
-      // Add variable names at the outer edge.
-      group.append("text")
-           .each(function(d) { d.angle = (d.startAngle + d.endAngle) / 2; })
-           .attr("dy", ".35em")
-           .attr("transform", d => `
-             rotate(${(d.angle * 180 / Math.PI - 90)})
-             translate(${outerRadius + 30})
-             ${d.angle > Math.PI ? "rotate(180)" : ""}
-           `)
-           .attr("text-anchor", d => d.angle > Math.PI ? "end" : "start")
-           .text((d, i) => vars[i]);
-      
-      // Draw chords (ribbons) connecting groups.
-      g.selectAll("path.chord")
-       .data(chord)
-       .enter().append("path")
-       .attr("class", "chord")
-       .attr("d", ribbon)
-       .attr("fill", d => d3.schemeCategory10[d.source.index % 10])
-       .attr("opacity", 0.7)
-       .on("mouseover", (event, d) => {
-         tooltip.transition().duration(200).style("opacity", 0.9);
-         // Provide details of the connection.
-         tooltip.html(`
-           <strong>${vars[d.source.index]}</strong> ↔ <strong>${vars[d.target.index]}</strong><br>
-           Correlation: ${(matrix[d.source.index][d.target.index]).toFixed(2)}
-         `)
-         .style("left", (event.pageX + 10) + "px")
-         .style("top", (event.pageY - 20) + "px");
-       })
-       .on("mouseout", () => {
-         tooltip.transition().duration(500).style("opacity", 0);
-       });
-    }).catch(error => {
-      console.error("Error loading CSV:", error);
-    });
+      // Draw CO₂ points and add tooltips.
+      chartG.selectAll(".co2-point")
+            .data(data)
+            .enter()
+            .append("circle")
+            .attr("class", "co2-point")
+            .attr("cx", d => polarToCartesian(angleScale(d.year), radiusCO2(d.co2)).x)
+            .attr("cy", d => polarToCartesian(angleScale(d.year), radiusCO2(d.co2)).y)
+            .attr("r", 4)
+            .attr("fill", "#e74c3c")
+            .on("mouseover", (event, d) => {
+              tooltip.style("opacity", 1)
+                     .html(`<strong>Year:</strong> ${d.year}<br><strong>CO₂:</strong> ${d.co2.toFixed(1)} units`)
+                     .style("left", (event.pageX + 10) + "px")
+                     .style("top", (event.pageY - 30) + "px");
+            })
+            .on("mouseout", () => tooltip.style("opacity", 0));
+    }
   </script>
 </body>
 </html>
