@@ -10,6 +10,9 @@
       background-color: #f3f3f3;
       margin: 0;
       padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
     h1 {
       text-align: center;
@@ -17,9 +20,6 @@
       margin-bottom: 5px;
     }
     #radialBarChart {
-      display: flex;
-      justify-content: center;
-      align-items: center;
       margin: 20px auto;
       width: 600px;
       height: 600px;
@@ -35,19 +35,71 @@
       border-radius: 4px;
       pointer-events: none;
       opacity: 0;
+      z-index: 10;
     }
     text {
       font-size: 12px;
       fill: #333;
+      pointer-events: none; /* Prevent text from interfering with mouse events */
     }
     .arc {
       stroke: #fff;
+      fill: orange;
+      cursor: pointer; /* Indicate interactivity */
+    }
+    .arc:hover {
+      fill: #e68a00; /* Darker orange on hover */
+    }
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 20px;
+      gap: 10px;
+    }
+    #controls button, #controls select {
+      padding: 8px 12px;
+      font-size: 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #fff;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    #controls button:hover {
+      background-color: #f0f0f0;
+    }
+    #controls button:active {
+      background-color: #ddd;
+      box-shadow: 0 0 1px rgba(0,0,0,0.2);
+      transform: translateY(1px);
+    }
+    #controls select {
+      appearance: none; /* Remove default arrow */
+      padding-right: 24px; /* Make space for custom arrow */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 5'%3E%3Cpath fill='%23333' fill-rule='nonzero' d='M2 0L0 2h4z'/%3E%3C/svg%3E"); /* Custom arrow */
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      background-size: 8px 10px;
+    }
+    #controls select:focus {
+      outline: none;
+      border-color: #007bff; /* Highlight on focus */
+      box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
     }
   </style>
 </head>
 <body>
 
 <h1>Radial Bar Chart of Crop Types Frequency</h1>
+<div id="controls">
+  <button id="sortAsc">Sort Ascending</button>
+  <button id="sortDesc">Sort Descending</button>
+  <select id="filterCrops">
+    <option value="all">All Crops</option>
+  </select>
+</div>
 <div id="radialBarChart"></div>
 <div class="tooltip" id="radialTooltip"></div>
 
@@ -69,21 +121,17 @@
 
   const tooltip = d3.select("#radialTooltip");
 
-  d3.csv(csvUrl).then(data => {
-    // Count frequency of each crop type
-    const freqMap = d3.rollup(data, v => v.length, d => d.SUBJECT);
-    // Convert to array
-    let dataset = Array.from(freqMap, ([subject, count]) => ({ subject, count }));
-    
-    // Sort descending
-    dataset.sort((a, b) => b.count - a.count);
+  let dataset = []; // Global dataset variable
+  let allCrops = [];
+  let filteredData = [];
 
-    // Basic dimension
-    const N = dataset.length;
+  // Function to update the chart
+  function updateChart(data) {
+    const N = data.length;
     const angleSlice = (2 * Math.PI) / N;
     const outerRadius = Math.min(width, height) / 2 - margin;
 
-    const maxCount = d3.max(dataset, d => d.count);
+    const maxCount = d3.max(data, d => d.count);
     const rScale = d3.scaleLinear()
       .domain([0, maxCount])
       .range([0, outerRadius]);
@@ -95,10 +143,12 @@
       .innerRadius(0)
       .outerRadius(d => 0); // Start from 0 for transition
 
-    // Draw arcs
-    const arcs = g.selectAll(".arc") // Changed selector to ".arc"
-      .data(dataset)
-      .enter()
+    // Select and update arcs
+    const arcs = g.selectAll(".arc")
+      .data(data, d => d.subject); // Use subject as key
+
+    // Enter new arcs
+    arcs.enter()
       .append("path")
       .attr("class", "arc")
       .attr("fill", "orange")
@@ -130,22 +180,103 @@
         };
       });
 
-    // Add labels
-    g.selectAll(".label") // Changed selector to ".label"
-      .data(dataset)
-      .enter()
+    // Update existing arcs
+    arcs.transition()
+      .duration(1000)
+      .attrTween("d", function(d, i) {
+        const interpOuter = d3.interpolateNumber(0, rScale(d.count));
+        return function(t) {
+          return d3.arc()
+            .startAngle(i * angleSlice)
+            .endAngle((i + 1) * angleSlice)
+            .innerRadius(0)
+            .outerRadius(interpOuter(t))();
+        };
+      });
+
+    // Remove old arcs
+    arcs.exit().remove();
+
+    // Select and update labels
+    const labels = g.selectAll(".label")
+      .data(data, d => d.subject); // Use subject as key
+
+    // Enter new labels
+    labels.enter()
       .append("text")
       .attr("class", "label")
       .attr("text-anchor", "middle")
+      .style("font-size", "11px")
       .attr("transform", (d, i) => {
         const angle = (i + 0.5) * angleSlice - Math.PI / 2;
-        const r = rScale(d.count) + 20; // label offset
+        const r = rScale(d.count) + 20;
         const x = Math.cos(angle) * r;
         const y = Math.sin(angle) * r;
         return `translate(${x}, ${y})`;
       })
-      .text(d => d.subject)
-      .style("font-size", "11px");
+      .text(d => d.subject);
+
+    // Update existing labels
+    labels.transition()
+      .duration(1000)
+      .attr("transform", (d, i) => {
+        const angle = (i + 0.5) * angleSlice - Math.PI / 2;
+        const r = rScale(d.count) + 20;
+        const x = Math.cos(angle) * r;
+        const y = Math.sin(angle) * r;
+        return `translate(${x}, ${y})`;
+      })
+      .text(d => d.subject);
+
+    // Remove old labels
+    labels.exit().remove();
+  }
+
+  d3.csv(csvUrl).then(data => {
+    // Count frequency of each crop type
+    const freqMap = d3.rollup(data, v => v.length, d => d.SUBJECT);
+    // Convert to array
+    dataset = Array.from(freqMap, ([subject, count]) => ({ subject, count }));
+    
+    // Sort descending
+    dataset.sort((a, b) => b.count - a.count);
+
+    // Store all unique crop types
+    allCrops = Array.from(new Set(data.map(d => d.SUBJECT)));
+    
+    // Add options to the filter dropdown
+    const filterSelect = d3.select("#filterCrops");
+    filterSelect.selectAll("option")
+      .data(["all", ...allCrops])
+      .enter()
+      .append("option")
+      .attr("value", d => d)
+      .text(d => d === "all" ? "All Crops" : d);
+
+    filteredData = dataset;
+    updateChart(filteredData);
+  });
+
+  // Event listeners for sorting buttons
+  d3.select("#sortAsc").on("click", () => {
+    filteredData.sort((a, b) => a.count - b.count);
+    updateChart(filteredData);
+  });
+
+  d3.select("#sortDesc").on("click", () => {
+    filteredData.sort((a, b) => b.count - a.count);
+    updateChart(filteredData);
+  });
+
+  // Event listener for filter dropdown
+  d3.select("#filterCrops").on("change", function() {
+    const selectedCrop = this.value;
+    if (selectedCrop === "all") {
+      filteredData = dataset;
+    } else {
+      filteredData = dataset.filter(d => d.subject === selectedCrop);
+    }
+    updateChart(filteredData);
   });
 </script>
 </body>
